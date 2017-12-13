@@ -240,8 +240,8 @@ def load_wavefront_alt(file_obj, file_type=None):
                 ft = [ft[0], ft[1], ft[2], ft[2], ft[3], ft[0]]
             for f in ft:
                 if not f in remap_table:
-                    out_v.append(verts['v'][f[0]])
-                    out_vn.append(verts['vn'][f[2]])
+                    out_v.append(verts['v'][f[0]-1])
+                    out_vn.append(verts['vn'][f[2]-1])
                     remap_table[f] = next_idx
                     next_idx += 1
                 out_f.append(remap_table[f])
