@@ -190,10 +190,7 @@ def load_wavefront_alt(file_obj, file_type=None):
     Loads an ascii Wavefront OBJ file_obj into kwargs
     for the Trimesh constructor.
 
-    Discards texture coordinates. (Vertex colors are non-standard
-    and should not be present in .obj files to begin with).
-
-    Vertices with the same position but different normals are split
+    Vertices with the same position but different normals or uvs are split
     into multiple vertices.
 
 
@@ -207,50 +204,67 @@ def load_wavefront_alt(file_obj, file_type=None):
     loaded: dict with kwargs for Trimesh constructor (vertices, faces)
     '''
 
-    verts = {'v': [], 'vt': [], 'vn': []}
+    # mike's mystery text massaging
+    text = file_obj.read()
+    if hasattr(text, 'decode'):
+        text = text.decode('utf-8')
+    text = text.replace('\r\n', '\n').replace('\r', '\n') + ' \n'
+
+    meshes = []
+    def _append_mesh(out_v, out_vt, out_vn, out_f):
+        if len(out_f) > 0:
+            loaded = {'vertices': np.array(out_v),
+                      'vertex_normals': np.array(out_vn),
+                      'faces': np.array(out_f, dtype=np.int64).reshape((-1,3)),
+                      'metadata': {}}
+            if len(out_vt) > 0:
+                loaded['metadata']['vertex_texture'] = np.array(out_vt)
+            meshes.append(loaded)
+
+    attribs = {'v': [], 'vt': [], 'vn': []}
     remap_table = {}
+    next_idx = 0
 
     out_v = []
     out_vn = []
+    out_vt = []
     out_f = []
-    next_idx = 0
 
-    meshes = []
-
-    def _push_mesh():
-        meshes.append({'vertices': np.array(out_v),
-                       'vertex_normals': np.array(out_vn),
-                       'faces': np.array(out_f, dtype=np.int64).reshape((-1,3)),
-                       'metadata': {}})
-        out_v = []
-        out_vn = []
-        out_f = []
-        next_idx = 0
-
-    for line in file_obj:
-        gps = line.strip().split(" ")
+    for line in text.split("\n"):
+        gps = line.strip().split()
         if len(gps) < 2:
             continue
-        if gps[0] in verts:
-            fv = [float(x) for x in gps[1:]]
-            verts[gps[0]].append(fv)
+        if gps[0] in attribs: # v, vt, or vn
+            attribs[gps[0]].append([float(x) for x in gps[1:]])
         elif gps[0] == 'f':
-            ft = [tuple(int(x) for x in g.split('/')) for g in gps[1:]]
+            ft = gps[1:]
             if len(ft) == 4:
+                # hasty triangulation of quad
                 ft = [ft[0], ft[1], ft[2], ft[2], ft[3], ft[0]]
             for f in ft:
                 if not f in remap_table:
-                    out_v.append(verts['v'][f[0]-1])
-                    out_vn.append(verts['vn'][f[2]-1])
                     remap_table[f] = next_idx
                     next_idx += 1
+                    gf = f.split('/')
+                    out_v.append(attribs['v'][int(gf[0])-1])
+                    if len(gf) > 1 and gf[1] != '':
+                        out_vt.append(attribs['vt'][int(gf[1])-1])
+                    if len(gf) > 2:
+                        out_vn.append(attribs['vn'][int(gf[2])-1])
                 out_f.append(remap_table[f])
         elif gps[0] == 'o':
-            _push_mesh()
-
+            _append_mesh(out_v, out_vt, out_vn, out_f)
+            out_v = []
+            out_vn = []
+            out_f = []
+            remap_table = {}
+            next_idx = 0
+        elif gps[0] == 'g':
+            # TODO: push groups someplace
+            pass
+            
     if next_idx > 0:
-        _push_mesh()
-
+        _append_mesh(out_v, out_vt, out_vn, out_f)
 
     return meshes
 
