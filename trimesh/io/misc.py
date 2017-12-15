@@ -193,6 +193,7 @@ def load_wavefront_alt(file_obj, file_type=None):
     Vertices with the same position but different normals or uvs are split
     into multiple vertices.
 
+    Colors are discarded.
 
     Parameters
     ----------
@@ -211,7 +212,7 @@ def load_wavefront_alt(file_obj, file_type=None):
     text = text.replace('\r\n', '\n').replace('\r', '\n') + ' \n'
 
     meshes = []
-    def _append_mesh(out_v, out_vt, out_vn, out_f):
+    def _append_mesh(out_v, out_vt, out_vn, out_f, g_list):
         if len(out_f) > 0:
             loaded = {'vertices': np.array(out_v),
                       'vertex_normals': np.array(out_vn),
@@ -219,6 +220,13 @@ def load_wavefront_alt(file_obj, file_type=None):
                       'metadata': {}}
             if len(out_vt) > 0:
                 loaded['metadata']['vertex_texture'] = np.array(out_vt)
+            if len(g_list) > 0:
+                # build face groups information
+                face_groups = np.zeros(len(out_f)//3, dtype=int)
+                for idx, start_f in g_list:
+                    face_groups[start_f:] = idx
+                loaded['metadata']['face_groups'] = face_groups
+
             meshes.append(loaded)
 
     attribs = {'v': [], 'vt': [], 'vn': []}
@@ -229,13 +237,16 @@ def load_wavefront_alt(file_obj, file_type=None):
     out_vn = []
     out_vt = []
     out_f = []
+    g_list = []
+    g_idx = 0
 
     for line in text.split("\n"):
         gps = line.strip().split()
         if len(gps) < 2:
             continue
         if gps[0] in attribs: # v, vt, or vn
-            attribs[gps[0]].append([float(x) for x in gps[1:]])
+            # only parse 3 values-- colors shoved into vertices are ignored
+            attribs[gps[0]].append([float(x) for x in gps[1:4]])
         elif gps[0] == 'f':
             ft = gps[1:]
             if len(ft) == 4:
@@ -253,18 +264,21 @@ def load_wavefront_alt(file_obj, file_type=None):
                         out_vn.append(attribs['vn'][int(gf[2])-1])
                 out_f.append(remap_table[f])
         elif gps[0] == 'o':
-            _append_mesh(out_v, out_vt, out_vn, out_f)
+            _append_mesh(out_v, out_vt, out_vn, out_f, g_list)
             out_v = []
             out_vn = []
             out_f = []
             remap_table = {}
             next_idx = 0
+            g_list = []
+            g_idx = 0
         elif gps[0] == 'g':
-            # TODO: push groups someplace
+            g_idx += 1
+            g_list.append((g_idx, len(out_f) // 3))
             pass
             
     if next_idx > 0:
-        _append_mesh(out_v, out_vt, out_vn, out_f)
+        _append_mesh(out_v, out_vt, out_vn, out_f, g_list)
 
     return meshes
 
@@ -354,8 +368,7 @@ def load_dict(data, file_type=None):
                          data.__class__.__name__)
 
 
-_misc_loaders = {'obj': load_wavefront,
-                 'obj2': load_wavefront_alt,
+_misc_loaders = {'obj': load_wavefront_alt,
                  'off': load_off,
                  'dict': load_dict,
                  'dict64': load_dict,

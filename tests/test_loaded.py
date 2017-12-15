@@ -42,7 +42,8 @@ class LoaderTest(g.unittest.TestCase):
     def test_obj_split_attributes(self):
         # test a wavefront file where pos/uv/norm have different indices
         # and where multiple objects share vertices
-        meshes = g.get_mesh('joined_tetrahedra.obj')
+        # Note 'process=False' to avoid merging vertices
+        meshes = g.get_mesh('joined_tetrahedra.obj', process=False)
         self.assertTrue(len(meshes) == 2)
         assert g.trimesh.util.is_shape(meshes[0].faces, (4,3))
         assert g.trimesh.util.is_shape(meshes[0].vertices, (9,3))
